@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<title>TUSI Engine Tests</title>
+<style>
+/* Layout: one column report. Summary tiles, then one table per test group. */
+:root {
+  --bg: #f2f6f6; --surface: #ffffff; --surface-2: #e9f0f0; --ink: #0f1d1f; --muted: #536668; --line: #d6e1e1;
+  --accent: #0b5f63; --accent-soft: #d9ecec; --good: #1b7a4a; --good-soft: #def2e6; --warn: #965800; --warn-soft: #fbebcf; --bad: #b5322a; --bad-soft: #fbe1de;
+  --font: "Manrope", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-display: "Outfit", "Segoe UI", system-ui, -apple-system, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0a1315; --surface: #112023; --surface-2: #172a2d; --ink: #e5efee; --muted: #8fa6a7; --line: #22373a;
+    --accent: #5cc6c2; --accent-soft: #123a3b; --good: #58cb92; --good-soft: #113424; --warn: #e9ae55; --warn-soft: #382a12; --bad: #f27b6f; --bad-soft: #3d1d1a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0a1315; --surface: #112023; --surface-2: #172a2d; --ink: #e5efee; --muted: #8fa6a7; --line: #22373a;
+  --accent: #5cc6c2; --accent-soft: #123a3b; --good: #58cb92; --good-soft: #113424; --warn: #e9ae55; --warn-soft: #382a12; --bad: #f27b6f; --bad-soft: #3d1d1a;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font); font-size: 15px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 28px 56px; }
+.wrap { max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px; }
+h1, h2 { font-family: var(--font-display); margin: 0; font-weight: 600; line-height: 1.2; text-wrap: balance; }
+h1 { font-size: 28px; }
+h2 { font-size: 18px; }
+p { margin: 0; }
+.muted { color: var(--muted); }
+.head { display: flex; gap: 14px; align-items: center; }
+.head svg { width: 48px; height: 48px; flex: none; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 16px 18px; }
+.tile .k { font-size: 12px; font-weight: 600; color: var(--muted); }
+.tile .v { font-family: var(--font-display); font-size: 34px; font-weight: 600; line-height: 1.1; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.tile .v.good { color: var(--good); } .tile .v.bad { color: var(--bad); }
+.tile p { font-size: 13px; color: var(--muted); margin-top: 4px; }
+.group { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 18px; }
+.group h2 { margin-bottom: 10px; }
+.tbl-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; min-width: 760px; font-size: 14px; }
+th { text-align: left; font-size: 12px; font-weight: 700; color: var(--muted); padding: 6px 10px; border-bottom: 1px solid var(--line); }
+td { padding: 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+td.n { font-variant-numeric: tabular-nums; white-space: nowrap; }
+td .why { display: block; color: var(--muted); font-size: 13px; margin-top: 2px; max-width: 52ch; }
+.pill { display: inline-block; font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+.pill.good { background: var(--good-soft); color: var(--good); }
+.pill.bad { background: var(--bad-soft); color: var(--bad); }
+.pill.fix { background: var(--accent-soft); color: var(--accent); }
+.exp { color: var(--muted); font-size: 12px; display: block; }
+.note { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 16px 18px; }
+.note ul { margin: 8px 0 0; padding-left: 20px; }
+.btn { font: inherit; font-weight: 700; font-size: 14px; border: 1px solid var(--accent); background: var(--accent); color: var(--bg); border-radius: 14px; min-height: 44px; padding: 0 16px; cursor: pointer; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+</style>
+</head>
+<body>
+<main class="wrap">
+  <header class="head">
+    <svg viewBox="0 0 64 64" role="img" aria-label="TUSI logo"><circle cx="32" cy="15" r="6.5" fill="var(--accent)" opacity="0.55"/><path d="M12 30 H52 M32 30 V52" stroke="var(--accent)" stroke-width="9" stroke-linecap="round" fill="none"/></svg>
+    <div>
+      <h1>TUSI engine tests</h1>
+      <p class="muted">Runs in this browser. Nothing is saved or sent anywhere.</p>
+    </div>
+  </header>
+  <section class="tiles" id="tiles" aria-live="polite"><div class="tile"><div class="k">Status</div><div class="v">Running</div></div></section>
+  <section class="note">
+    <h2>How to read this</h2>
+    <ul>
+      <li><b>Prototype</b> is the original prototype rules. <b>TUSI</b> adds the two approved fixes.</li>
+      <li>Each cell shows the result, with the hand worked expected value underneath.</li>
+      <li>Rows marked <span class="pill fix">Changed by fix</span> are where the two modes are meant to differ.</li>
+      <li>The parity check runs 500 random budgets through the original prototype code and TUSI's prototype mode, and every result must match.</li>
+    </ul>
+  </section>
+  <div id="groups"></div>
+  <p><button class="btn" id="rerun" type="button">Run again</button></p>
+</main>
+<script src="js/engine.js"></script>
+<script src="tests/prototype-reference.js"></script>
+<script src="tests/engine.test.js"></script>
+<script src="js/backup.js"></script>
+<script src="tests/backup.test.js"></script>
+<script src="tests/test-page.js"></script>
+</body>
+</html>

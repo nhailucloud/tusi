@@ -1,0 +1,54 @@
+/* TUSI service worker. Keeps the app working offline. It only caches the app's own files.
+   Your numbers live in IndexedDB on this device and are never touched here. */
+"use strict";
+const VERSION = "1.0.0";
+const CACHE = "tusi-app-" + VERSION;
+const FILES = [
+  "./",
+  "index.html",
+  "manifest.webmanifest",
+  "css/app.css",
+  "js/engine.js",
+  "js/store.js",
+  "js/backup.js",
+  "js/app.js",
+  "fonts/outfit-latin.woff2",
+  "fonts/manrope-latin.woff2",
+  "icons/favicon.svg",
+  "icons/apple-touch-icon.png",
+  "icons/icon-192.png",
+  "icons/icon-512.png",
+  "icons/icon-maskable-512.png"
+];
+
+self.addEventListener("install", (event) => {
+  event.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES.map((f) => new Request(f, { cache: "reload" })))));
+});
+
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
+    caches.keys()
+      .then((keys) => Promise.all(keys.filter((k) => k.startsWith("tusi-app-") && k !== CACHE).map((k) => caches.delete(k))))
+      .then(() => self.clients.claim())
+  );
+});
+
+self.addEventListener("message", (event) => {
+  if (event.data === "skip-waiting") self.skipWaiting();
+});
+
+self.addEventListener("fetch", (event) => {
+  const req = event.request;
+  if (req.method !== "GET") return;
+  const url = new URL(req.url);
+  if (url.origin !== self.location.origin) return;
+  if (req.mode === "navigate") {
+    /* The app page opens from the cache, so it starts offline. Other pages, like the test page, go to the network. */
+    const scope = new URL(self.registration.scope).pathname;
+    const isApp = url.pathname === scope || url.pathname === scope + "index.html";
+    const shell = () => caches.open(CACHE).then((c) => c.match("index.html"));
+    event.respondWith(isApp ? shell().then((hit) => hit || fetch(req)) : fetch(req).catch(shell));
+    return;
+  }
+  event.respondWith(caches.match(req, { ignoreSearch: true }).then((hit) => hit || fetch(req)));
+});
