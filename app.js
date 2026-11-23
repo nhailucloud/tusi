@@ -8,7 +8,7 @@
 
   const E = window.TusiEngine;
   const Store = window.TusiStore;
-  const APP_VERSION = "1.0.0";
+  const APP_VERSION = "1.0.1";
   const MAX_AMOUNT = 10000000;
   const FREQ_LABEL = { weekly: "Weekly", biweekly: "Every 2 weeks", monthly: "Monthly", once: "One time" };
 

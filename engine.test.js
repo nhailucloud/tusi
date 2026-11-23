@@ -8,7 +8,7 @@
  */
 (function (root, factory) {
   var api = factory(
-    typeof module === "object" && module.exports ? require("../js/engine.js") : root.TusiEngine,
+    typeof module === "object" && module.exports ? require("./engine.js") : root.TusiEngine,
     typeof module === "object" && module.exports ? require("./prototype-reference.js") : root.PrototypeReference
   );
   if (typeof module === "object" && module.exports) module.exports = api;

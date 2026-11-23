@@ -1,6 +1,6 @@
 /* Backup file checks. Runs in the browser test page (test.html) and in Node: node tests/backup.test.js */
 (function (root, factory) {
-  var api = factory(typeof module === "object" && module.exports ? require("../js/backup.js") : root.TusiBackup);
+  var api = factory(typeof module === "object" && module.exports ? require("./backup.js") : root.TusiBackup);
   if (typeof module === "object" && module.exports) module.exports = api; else root.TusiBackupTests = api;
 })(typeof self !== "undefined" ? self : this, function (B) {
   "use strict";

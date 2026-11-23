@@ -23,19 +23,21 @@ Live app: https://nhailucloud.github.io/tusi/
 
 Plain HTML, CSS and JavaScript. There is no build step, no framework, no server and no outside service. Fonts are stored in the repo, so the app makes no requests to any other site.
 
+All files sit in one folder, so they upload through the GitHub website in a single drag.
+
 | File | What it is |
 | --- | --- |
 | `index.html` | The app page, with a strict Content Security Policy |
-| `css/app.css` | All styles, light and dark |
-| `js/engine.js` | The runway and safe to spend engine. Pure functions, no page access |
-| `js/store.js` | Saves your data on this device (IndexedDB, then localStorage) |
-| `js/backup.js` | Makes and strictly checks backup files |
-| `js/app.js` | Screens, sheets and navigation |
+| `app.css` | All styles, light and dark |
+| `engine.js` | The runway and safe to spend engine. Pure functions, no page access |
+| `store.js` | Saves your data on this device (IndexedDB, then localStorage) |
+| `backup.js` | Makes and strictly checks backup files |
+| `app.js` | Screens, sheets and navigation |
 | `sw.js` | Service worker that lets the app open offline |
 | `manifest.webmanifest` | Name, colors and icons for installing |
-| `icons/` | App icons, including the iPhone home screen icon |
-| `fonts/` | Outfit and Manrope, with their open font licenses |
-| `test.html`, `tests/` | The test page and the tests behind it |
+| `icon*.png`, `icon*.svg`, `apple-touch-icon.png`, `favicon.svg` | App icons, including the iPhone home screen icon |
+| `*.woff2`, `OFL-*.txt` | Outfit and Manrope fonts, with their open font licenses |
+| `test.html`, `*.test.js`, `test-page.js`, `prototype-reference.js` | The test page and the tests behind it |
 
 ## Put it online with GitHub Pages
 
@@ -43,11 +45,11 @@ These steps use only the GitHub website. You do not need a command line or any i
 
 ### First time
 
-1. Unzip `tusi-release.zip` on your computer. You get a folder named `tusi`.
+1. Unzip the release zip (for example `tusi-release-1.0.1.zip`) on your computer. You get a folder named `tusi`.
 2. Go to https://github.com/new while signed in as nhailucloud.
 3. Set the repository name to `tusi`. Choose **Public**. Leave "Add a README file" unchecked. Click **Create repository**.
 4. On the new repository page, click the link **uploading an existing file**.
-5. Open the `tusi` folder on your computer and select everything inside it, including the `css`, `js`, `fonts`, `icons` and `tests` folders and the `.nojekyll` file. Drag all of it onto the upload area. Drag the contents, not the `tusi` folder itself.
+5. Open the `tusi` folder on your computer, select every file in it (Ctrl+A on Windows, Cmd+A on Mac) and drag them onto the upload area.
    * If `.nojekyll` is hidden on your computer, it is fine to skip it. The app works without it.
 6. Wait until every file shows in the list, then click **Commit changes**.
 7. Open **Settings**, then **Pages** in the left menu.
@@ -56,14 +58,14 @@ These steps use only the GitHub website. You do not need a command line or any i
 
 ### Check the upload
 
-* The repository's main page lists `index.html`, `sw.js` and `manifest.webmanifest` at the top level, next to the folders. If you see a single `tusi` folder instead, the files went one level too deep. Delete that folder and upload the contents again.
+* The repository's main page lists `index.html`, `app.css`, `app.js` and `sw.js` together, with no folders.
 * Open https://nhailucloud.github.io/tusi/test.html. Every tile should be green.
 
 ### Updating later
 
 1. Unzip the new release.
 2. On the repository page, click **Add file**, then **Upload files**.
-3. Drag in the changed files and folders. Files with the same name are replaced.
+3. Drag in the changed files. Files with the same name are replaced.
 4. Click **Commit changes** and wait about two minutes.
 5. Open TUSI. It shows "A new version of TUSI is ready". Tap **Update**.
 

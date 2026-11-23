@@ -1,24 +1,24 @@
 /* TUSI service worker. Keeps the app working offline. It only caches the app's own files.
    Your numbers live in IndexedDB on this device and are never touched here. */
 "use strict";
-const VERSION = "1.0.0";
+const VERSION = "1.0.1";
 const CACHE = "tusi-app-" + VERSION;
 const FILES = [
   "./",
   "index.html",
   "manifest.webmanifest",
-  "css/app.css",
-  "js/engine.js",
-  "js/store.js",
-  "js/backup.js",
-  "js/app.js",
-  "fonts/outfit-latin.woff2",
-  "fonts/manrope-latin.woff2",
-  "icons/favicon.svg",
-  "icons/apple-touch-icon.png",
-  "icons/icon-192.png",
-  "icons/icon-512.png",
-  "icons/icon-maskable-512.png"
+  "app.css",
+  "engine.js",
+  "store.js",
+  "backup.js",
+  "app.js",
+  "outfit-latin.woff2",
+  "manrope-latin.woff2",
+  "favicon.svg",
+  "apple-touch-icon.png",
+  "icon-192.png",
+  "icon-512.png",
+  "icon-maskable-512.png"
 ];
 
 self.addEventListener("install", (event) => {

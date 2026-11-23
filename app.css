@@ -2,8 +2,8 @@
    Tile colors carry fixed meanings everywhere:
    violet = runway, mint = money coming in, blue = forecast and low points, teal = bills. */
 
-@font-face { font-family: "Outfit"; src: url("../fonts/outfit-latin.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
-@font-face { font-family: "Manrope"; src: url("../fonts/manrope-latin.woff2") format("woff2"); font-weight: 200 800; font-display: swap; }
+@font-face { font-family: "Outfit"; src: url("outfit-latin.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
+@font-face { font-family: "Manrope"; src: url("manrope-latin.woff2") format("woff2"); font-weight: 200 800; font-display: swap; }
 
 :root {
   /* Dark (default) */
