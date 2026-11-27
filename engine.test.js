@@ -55,6 +55,28 @@
     { group: "Paydays", name: "Payday today is not the next payday", why: "Money arriving today is already in hand, so the next payday is 14 days out", expect: both(14), run: function (m) {
       return sum({ balance: 100, daily: 10, incomes: [{ amount: 500, freq: "biweekly", next: T0 }], bills: [] }, m).nextPayday; } },
 
+    /* ---- Live balance (version 1.1) ---- */
+    { group: "Live balance", name: "Payday today is added once", why: "A $500 paycheck due today moves the balance by $500 and makes one log entry", expect: both("1 entry, +500"), run: function () {
+      var r = E.settle({ balance: 100, incomes: [{ name: "Paycheck", amount: 500, freq: "biweekly", next: T0 }], bills: [] }, { today: T0, from: at(T0, -1) });
+      return r.entries.length + " entry, +" + r.delta; } },
+    { group: "Live balance", name: "Catching up after two weeks away", why: "Weekly $100 pay on days -14, -7 and 0, plus a $50 bill on day -10: +300 minus 50 = +250", expect: both("4 entries, +250"), run: function () {
+      var r = E.settle({ balance: 0, incomes: [{ name: "Pay", amount: 100, freq: "weekly", next: at(T0, -14) }], bills: [{ name: "Phone", amount: 50, freq: "monthly", next: at(T0, -10) }] }, { today: T0, from: at(T0, -15) });
+      return r.entries.length + " entries, +" + r.delta; } },
+    { group: "Live balance", name: "Nothing new when already up to date", why: "Settled through today, so a second open adds nothing", expect: both(0), run: function () {
+      return E.settle({ balance: 0, incomes: [{ amount: 500, freq: "weekly", next: T0 }], bills: [] }, { today: T0, from: T0 }).entries.length; } },
+    { group: "Live balance", name: "Settled payday is not counted twice", why: "After today's $500 lands in the balance, the forecast must match the old view. The prototype has no settling, so it counts the $500 twice", expect: { prototype: false, tusi: true }, run: function (m) {
+      var inc = [{ amount: 500, freq: "biweekly", next: T0 }];
+      var before = E.analyze({ balance: 100, daily: 10, incomes: inc, bills: [] }, { mode: m, today: T0 }).summary();
+      var after = E.analyze({ balance: 600, daily: 10, incomes: inc, bills: [] }, { mode: m, today: T0, appliedThrough: T0 }).summary();
+      return before.runway === after.runway && Math.abs(before.safeToday - after.safeToday) < 0.01; } },
+    { group: "Live balance", name: "Available now", why: "$1,000 minus $400 rent before payday minus $100 cushion. The phone bill after payday is not taken off", expect: both(500), run: function (m) {
+      return sum({ balance: 1000, daily: 20, buffer: 100, incomes: [{ amount: 900, freq: "biweekly", next: at(T0, 10) }],
+        bills: [{ name: "Rent", amount: 400, freq: "monthly", next: at(T0, 3) }, { name: "Phone", amount: 50, freq: "monthly", next: at(T0, 12) }] }, m).available; } },
+    { group: "Live balance", name: "Available now with no income", why: "No payday known, so bills in the next 30 days count: $300 minus $100", expect: both(200), run: function (m) {
+      return sum({ balance: 300, daily: 5, incomes: [], bills: [{ amount: 100, freq: "once", next: at(T0, 20) }, { amount: 100, freq: "once", next: at(T0, 40) }] }, m).available; } },
+    { group: "Live balance", name: "Logged income is not spending", why: "Only the $5 purchase counts as spent today, not the $200 income or an auto bill", expect: both(5), run: function () {
+      return E.spentOn([{ date: T0, amt: 200, kind: "income" }, { date: T0, amt: 80, kind: "bill" }, { date: T0, amt: 5 }], E.parseDate(T0)); } },
+
     /* ---- Shortfalls ---- */
     { group: "Shortfalls", name: "Short before payday: runway", why: "Rent of $400 on day 3 takes $200 below zero", expect: both(3), run: function (m) { return sum(C, m).runway; } },
     { group: "Shortfalls", name: "Short before payday: amount", why: "Lowest point before payday is day 9: 200 minus 400 minus 300 = minus $500", expect: both(500), run: function (m) { return sum(C, m).short.amount; } },

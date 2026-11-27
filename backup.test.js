@@ -35,6 +35,8 @@
     ["oversized", " ".repeat(B.MAX_BYTES + 1), false, "too large"],
     ["long name trimmed", mut((o) => { o.data.bills[0].name = "x".repeat(300); }), true],
     ["bad id dropped", mut((o) => { o.data.bills[0].id = "<img src=x>"; }), true],
+    ["income entry restores", mut((o) => { o.data.log.push({ id: "c2", date: "2026-11-23", amt: 900, note: "Paycheck", kind: "pay" }); }), true],
+    ["unknown entry type refused", mut((o) => { o.data.log[0].kind = "transfer"; }), false, "unknown type"],
     ["script note kept as plain text", mut((o) => { o.data.log[0].note = "<script>alert(1)</script>"; }), true],
   ];
     return cases.map(function (c) {

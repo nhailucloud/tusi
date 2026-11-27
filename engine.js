@@ -117,13 +117,40 @@
   function spentOn(log, today) {
     var key = iso(today), total = 0;
     (log || []).forEach(function (x) {
-      if (!x) return;
+      if (!x || (x.kind && x.kind !== "purchase")) return; /* income, paydays and bills are not spending */
       var amt = num(x.amt, 0);
       if (!(amt > 0)) return;
       var d = typeof x.date === "string" ? x.date : (isFinite(x.t) ? iso(new Date(x.t)) : null);
       if (d === key) total += amt;
     });
     return Math.round(total * 100) / 100;
+  }
+
+  /* ---------- Auto settle ----------
+     Paydays and bills that came due after `from` (exclusive) up to `today` (inclusive).
+     Returns entries to add to the log and the change to the balance. */
+  function settle(rawState, options) {
+    options = options || {};
+    var today = toDay(options.today), from = parseDate(options.from), S = cleanState(rawState);
+    if (!from) return { entries: [], delta: 0, through: iso(today) };
+    var start = addDays(from, 1), span = diffDays(start, today);
+    if (span < 0) return { entries: [], delta: 0, through: iso(today) };
+    span = Math.min(span, HORIZON);
+    var entries = [], delta = 0;
+    function add(list, kind, sign, raw) {
+      list.forEach(function (it, i) {
+        occurrences(it, start, span).forEach(function (d) {
+          entries.push({ date: iso(addDays(start, d)), amt: it.amount, kind: kind, note: it.name || (kind === "pay" ? "Income" : "Bill"), item: raw[i] });
+          delta += sign * it.amount;
+        });
+      });
+    }
+    /* cleanState drops bad items, so keep a list of the raw items that survived, in the same order */
+    var keep = function (list) { return (Array.isArray(list) ? list : []).filter(function (x) { return cleanItem(x); }); };
+    add(S.incomes, "pay", 1, keep(rawState && rawState.incomes));
+    add(S.bills, "bill", -1, keep(rawState && rawState.bills));
+    entries.sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : (a.kind === "pay" ? -1 : 1); });
+    return { entries: entries, delta: Math.round(delta * 100) / 100, through: iso(today) };
   }
 
   /* ---------- Analysis ---------- */
@@ -136,14 +163,17 @@
     var H = HORIZON;
     var S = cleanState(rawState);
     var spent = fixed ? spentOn(S.log, today) : 0;
+    /* Paydays and bills already added to the balance (auto settle) are not counted again. */
+    var appliedDate = fixed && parseDate(options.appliedThrough);
+    var appliedK = appliedDate ? diffDays(today, appliedDate) : -1;
 
     var inc = new Array(H + 1).fill(0), bil = new Array(H + 1).fill(0), events = [];
     for (var i = 0; i <= H; i++) events.push([]);
     S.incomes.forEach(function (it) {
-      occurrences(it, today, H).forEach(function (d) { inc[d] += it.amount; events[d].push({ name: it.name || "Income", amount: it.amount, type: "in", freq: it.freq }); });
+      occurrences(it, today, H).forEach(function (d) { if (d <= appliedK) return; inc[d] += it.amount; events[d].push({ name: it.name || "Income", amount: it.amount, type: "in", freq: it.freq }); });
     });
     S.bills.forEach(function (it) {
-      occurrences(it, today, H).forEach(function (d) { bil[d] += it.amount; events[d].push({ name: it.name || "Bill", amount: it.amount, type: "out", freq: it.freq }); });
+      occurrences(it, today, H).forEach(function (d) { if (d <= appliedK) return; bil[d] += it.amount; events[d].push({ name: it.name || "Bill", amount: it.amount, type: "out", freq: it.freq }); });
     });
     var cum = [], c = 0;
     for (var d = 0; d <= H; d++) { c += inc[d] - bil[d]; cum[d] = c; }
@@ -231,28 +261,37 @@
       for (var k = 0; k <= days; k++) out.push({ day: k, date: iso(addDays(today, k)), balance: balanceAt(k), events: events[k] });
       return out;
     }
+    /* Money you can use now: balance, minus bills due before the next payday, minus the cushion. */
+    function available(extra) {
+      var until = nextPayday === null ? 30 : nextPayday, bills = [], total = 0;
+      for (var k = 0; k < until; k++) events[k].forEach(function (e) { if (e.type === "out") { bills.push({ day: k, name: e.name, amount: e.amount }); total += e.amount; } });
+      var bal = S.balance - (extra || 0);
+      return { balance: bal, bills: Math.round(total * 100) / 100, billList: bills, buffer: S.buffer, until: until,
+        untilPayday: nextPayday !== null, amount: Math.round((bal - total - S.buffer) * 100) / 100 };
+    }
     function summary() {
-      var sf = safe(0);
+      var sf = safe(0), av = available(0);
       return {
         mode: mode, today: iso(today),
         runway: runwayFor(S.daily), nextPayday: nextPayday,
         safeToday: sf.today, safePace: sf.pace, safeWindow: sf.window,
-        spentToday: spent, short: shortBeforePay(0), status: status()
+        spentToday: spent, short: shortBeforePay(0), status: status(),
+        available: av.amount, availableBills: av.bills, availableUntil: av.until
       };
     }
 
     return {
       mode: mode, today: today, state: S, events: events, paydays: paydays, nextPayday: nextPayday,
       balanceAt: balanceAt, runwayFor: runwayFor, safe: safe, shortBeforePay: shortBeforePay,
-      maxDailyFor: maxDailyFor, status: status, purchase: purchase, insights: insights,
+      maxDailyFor: maxDailyFor, status: status, purchase: purchase, available: available, insights: insights,
       forecast: forecast, summary: summary
     };
   }
 
   return {
-    VERSION: "1.0.0", HORIZON: HORIZON, FREQS: FREQS.slice(),
+    VERSION: "1.1.0", HORIZON: HORIZON, FREQS: FREQS.slice(),
     parseDate: parseDate, iso: iso, addDays: addDays, diffDays: diffDays,
     occurrences: occurrences, monthlyOf: monthlyOf, spentOn: spentOn,
-    cleanState: cleanState, analyze: analyze
+    cleanState: cleanState, analyze: analyze, settle: settle
   };
 });

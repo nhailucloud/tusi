@@ -1,7 +1,7 @@
 /* TUSI service worker. Keeps the app working offline. It only caches the app's own files.
    Your numbers live in IndexedDB on this device and are never touched here. */
 "use strict";
-const VERSION = "1.0.1";
+const VERSION = "1.1.0";
 const CACHE = "tusi-app-" + VERSION;
 const FILES = [
   "./",

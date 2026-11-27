@@ -2,7 +2,7 @@
 
 **Built for the ones we plan for.**
 
-TUSI shows how many days your money lasts and what is safe to spend today. It is a free web app you can install on your phone and laptop. It has no accounts, no bank links and no tracking, and your numbers never leave your device.
+TUSI shows how much money you can use right now and how many days it lasts. It is a free web app you can install on your phone and laptop. It has no accounts, no bank links and no tracking, and your numbers never leave your device.
 
 TUSI is a nickname for Deborah. Every plan in here is made with the people we love in mind.
 
@@ -10,11 +10,12 @@ Live app: https://nhailucloud.github.io/tusi/
 
 ## What it does
 
-* **Safe to spend today:** what you can spend today and still cover every bill until payday, with your cushion kept aside.
-* **Runway:** how many days your money lasts if you keep spending at your usual pace.
+* **Available now:** your balance, minus the bills due before your next payday, minus your cushion. This is the money you can use right now.
+* **Balance that keeps itself current:** paydays and bills from Plan are added on their day, even if TUSI was closed. Logging a purchase lowers the balance and logging income raises it. Every change shows in Log and can be removed.
+* **Runway:** how many days your money lasts if you keep spending at your usual pace, with a daily spending guide to stay on track.
 * **Balance ahead:** a 30, 90 or 180 day forecast with paydays, bills and your lowest point.
 * **Can I afford this:** what a purchase does to your runway and to today's safe amount before you buy.
-* **Log:** quick purchase logging with amounts and categories, plus a weekly check in.
+* **Log:** quick logging of money spent or received, with amounts and categories, plus a weekly check in.
 * **Backup and restore:** save one small file and move your data between phone and laptop.
 * **Works offline** and installs on an iPhone home screen like an app.
 * **Light and dark** themes.
@@ -29,7 +30,7 @@ All files sit in one folder, so they upload through the GitHub website in a sing
 | --- | --- |
 | `index.html` | The app page, with a strict Content Security Policy |
 | `app.css` | All styles, light and dark |
-| `engine.js` | The runway and safe to spend engine. Pure functions, no page access |
+| `engine.js` | The engine for available now, runway, the daily guide and automatic paydays and bills. Pure functions, no page access |
 | `store.js` | Saves your data on this device (IndexedDB, then localStorage) |
 | `backup.js` | Makes and strictly checks backup files |
 | `app.js` | Screens, sheets and navigation |
@@ -45,7 +46,7 @@ These steps use only the GitHub website. You do not need a command line or any i
 
 ### First time
 
-1. Unzip the release zip (for example `tusi-release-1.0.1.zip`) on your computer. You get a folder named `tusi`.
+1. Unzip the release zip (for example `tusi-release-1.1.0.zip`) on your computer. You get a folder named `tusi`.
 2. Go to https://github.com/new while signed in as nhailucloud.
 3. Set the repository name to `tusi`. Choose **Public**. Leave "Add a README file" unchecked. Click **Create repository**.
 4. On the new repository page, click the link **uploading an existing file**.
@@ -130,6 +131,8 @@ Backups are plain text files. Anyone who opens one can read your numbers, so kee
 * [ ] test.html: engine checks, prototype match and backup checks all green
 * [ ] Setup in three steps works with a fresh browser
 * [ ] Log a purchase, then Undo, and the balance returns
+* [ ] Log income and the balance and Available now go up
+* [ ] A payday or bill dated today is added to the balance once, not twice after a reload
 * [ ] Add, edit and delete a bill in Plan
 * [ ] Can I afford this shows the change in runway
 * [ ] Light and dark both read clearly

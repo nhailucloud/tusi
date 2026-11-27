@@ -16,12 +16,13 @@
   var MAX_BYTES = 1024 * 1024;
   var MAX_AMOUNT = 10000000;
   var LIMITS = { incomes: 100, bills: 200, log: 500 };
+  var KINDS = ["income", "pay", "bill"];
   var BAD_KEYS = { "__proto__": 1, "constructor": 1, "prototype": 1 };
 
   function make(state, meta) {
     meta = meta || {};
     var s = state || {};
-    var pickItem = function (it) { return { id: it.id, name: it.name, amount: it.amount, freq: it.freq, next: it.next }; };
+    var pickItem = function (it) { return { id: it.id, name: it.name, amount: it.amount, freq: it.freq, next: it.next, appliedOn: it.appliedOn }; };
     return {
       app: "TUSI",
       kind: "backup",
@@ -30,10 +31,10 @@
       appVersion: meta.appVersion || "",
       data: {
         balance: s.balance, daily: s.daily, buffer: s.buffer,
-        balanceUpdated: s.balanceUpdated, lastCheckin: s.lastCheckin, setupDate: s.setupDate,
+        balanceUpdated: s.balanceUpdated, lastCheckin: s.lastCheckin, setupDate: s.setupDate, settledThrough: s.settledThrough,
         incomes: (s.incomes || []).map(pickItem),
         bills: (s.bills || []).map(pickItem),
-        log: (s.log || []).map(function (x) { return { id: x.id, date: x.date, t: x.t, amt: x.amt, note: x.note }; }),
+        log: (s.log || []).map(function (x) { return { id: x.id, date: x.date, t: x.t, amt: x.amt, note: x.note, kind: x.kind }; }),
         settings: { theme: s.settings && s.settings.theme, range: s.settings && s.settings.range }
       }
     };
@@ -78,7 +79,8 @@
         name: text(it.name, label + " name", 40),
         amount: money(it.amount, label + " amount", { positive: true }),
         freq: it.freq,
-        next: date(it.next, label + " date")
+        next: date(it.next, label + " date"),
+        appliedOn: date(it.appliedOn, label + " applied date", true)
       };
     });
   }
@@ -109,6 +111,7 @@
         balanceUpdated: date(d.balanceUpdated, "Balance date", true),
         lastCheckin: date(d.lastCheckin, "Check in date", true),
         setupDate: date(d.setupDate, "Setup date", true),
+        settledThrough: date(d.settledThrough, "Settled date", true),
         incomes: items(d.incomes, "incomes", "Income"),
         bills: items(d.bills, "bills", "Bill"),
         log: (function () {
@@ -119,7 +122,8 @@
             if (!isObj(x)) throw new Fail(label + " is not readable.");
             var t = x.t === undefined ? undefined : x.t;
             if (t !== undefined && (typeof t !== "number" || !isFinite(t))) throw new Fail(label + " has a bad time.");
-            return { id: id(x.id), date: date(x.date, label + " date"), t: t, amt: money(x.amt, label + " amount", { positive: true }), note: text(x.note, label + " note", 40) };
+            if (x.kind !== undefined && KINDS.indexOf(x.kind) < 0) throw new Fail(label + " has an unknown type.");
+            return { id: id(x.id), date: date(x.date, label + " date"), t: t, amt: money(x.amt, label + " amount", { positive: true }), note: text(x.note, label + " note", 40), kind: x.kind };
           });
         })(),
         settings: {

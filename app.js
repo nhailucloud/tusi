@@ -8,7 +8,7 @@
 
   const E = window.TusiEngine;
   const Store = window.TusiStore;
-  const APP_VERSION = "1.0.1";
+  const APP_VERSION = "1.1.0";
   const MAX_AMOUNT = 10000000;
   const FREQ_LABEL = { weekly: "Weekly", biweekly: "Every 2 weeks", monthly: "Monthly", once: "One time" };
 
@@ -74,7 +74,7 @@
     return {
       version: 1, setupDone: false, sample: false,
       balance: 0, daily: 30, buffer: 0, incomes: [], bills: [], log: [],
-      balanceUpdated: E.iso(today()), lastCheckin: E.iso(today()), setupDate: E.iso(today()), lastBackup: null,
+      balanceUpdated: E.iso(today()), lastCheckin: E.iso(today()), setupDate: E.iso(today()), lastBackup: null, settledThrough: E.iso(dayOff(-1)),
       settings: { theme: "dark", range: 30 }
     };
   }
@@ -106,14 +106,16 @@
     const keepId = (list) => (Array.isArray(list) ? list : []).filter((x) => x && typeof x === "object");
     const withIds = (orig, cleaned) => cleaned.map((it) => {
       const o = keepId(orig).find((x) => x.name === it.name && Number(x.amount) === it.amount && x.next === it.next && x.freq === it.freq);
-      return Object.assign({ id: (o && typeof o.id === "string" && o.id.slice(0, 24)) || uid() }, it, { name: it.name.slice(0, 40) });
+      return Object.assign({ id: (o && typeof o.id === "string" && o.id.slice(0, 24)) || uid() }, it, { name: it.name.slice(0, 40) },
+        o && E.parseDate(o.appliedOn) ? { appliedOn: o.appliedOn } : {});
     });
     const log = keepId(raw.log).map((x) => ({
       id: typeof x.id === "string" ? x.id.slice(0, 24) : uid(),
       date: E.parseDate(x.date) ? x.date : (isFinite(x.t) ? E.iso(new Date(x.t)) : null),
       t: isFinite(x.t) ? Number(x.t) : Date.now(),
       amt: Math.round(Number(x.amt) * 100) / 100,
-      note: typeof x.note === "string" ? x.note.slice(0, 40) : ""
+      note: typeof x.note === "string" ? x.note.slice(0, 40) : "",
+      kind: ["income", "pay", "bill"].includes(x.kind) ? x.kind : undefined
     })).filter((x) => x.date && x.amt > 0 && x.amt <= MAX_AMOUNT).slice(0, 500);
     const settings = raw.settings && typeof raw.settings === "object" ? raw.settings : {};
     return Object.assign(base, {
@@ -124,6 +126,7 @@
       lastCheckin: E.parseDate(raw.lastCheckin) ? raw.lastCheckin : base.lastCheckin,
       setupDate: E.parseDate(raw.setupDate) ? raw.setupDate : base.setupDate,
       lastBackup: E.parseDate(raw.lastBackup) ? raw.lastBackup : null,
+      settledThrough: E.parseDate(raw.settledThrough) && raw.settledThrough <= E.iso(today()) ? raw.settledThrough : base.settledThrough,
       settings: {
         theme: ["system", "light", "dark"].includes(settings.theme) ? settings.theme : "system",
         range: [30, 60, 90, 180].includes(settings.range) ? settings.range : 30
@@ -140,7 +143,37 @@
       Store.save(S).catch(() => toast("Could not save on this device. Your last change may be lost."));
     }, 150);
   }
-  function analysis() { return E.analyze(S, { mode: "tusi", today: today() }); }
+  function analysis() { return E.analyze(S, { mode: "tusi", today: today(), appliedThrough: S.settledThrough }); }
+
+  /* ---------- Live balance ----------
+     Each log entry moves the balance: purchases and bills down, income and paydays up.
+     Paydays and bills are added on their day automatically (settle). */
+  const LOG_IN = ["income", "pay"];
+  const effectOf = (x) => (LOG_IN.includes(x.kind) ? x.amt : -x.amt);
+  const isPurchase = (x) => !x.kind;
+  const KIND_LABEL = { income: "Income", pay: "Payday, added automatically", bill: "Bill, paid automatically" };
+  function addEntries(list) {
+    const now = Date.now();
+    const made = list.map((x) => Object.assign({ id: uid(), t: x.date === E.iso(today()) ? now : E.parseDate(x.date).getTime() + 12 * 36e5 }, x));
+    S.log = made.slice().reverse().concat(S.log).slice(0, 500);
+    S.balance = Math.round((S.balance + made.reduce((a, x) => a + effectOf(x), 0)) * 100) / 100;
+    return made;
+  }
+  function settleNow(opts) {
+    const res = E.settle(S, { today: today(), from: S.settledThrough });
+    S.settledThrough = res.through;
+    if (!res.entries.length) return [];
+    const t = E.iso(today());
+    res.entries.forEach((x) => { if (x.date === t && x.item) x.item.appliedOn = t; });
+    const made = addEntries(res.entries.map((x) => ({ date: x.date, amt: x.amt, kind: x.kind, note: x.note })));
+    if (!(opts && opts.silent)) {
+      const one = made.length === 1 ? made[0] : null;
+      const msg = one ? (one.note + (one.kind === "pay" ? " +" + m2(one.amt) + " added to your balance" : " " + MINUS + m2(one.amt) + " taken from your balance"))
+        : "Balance updated for " + plural(made.length, "payday and bill").replace("payday and bills", "paydays and bills");
+      toast(msg, "See log", () => { location.hash = "#log"; });
+    }
+    return made;
+  }
 
   /* ---------- Theme ---------- */
   function applyTheme() {
@@ -228,7 +261,7 @@
         h("button", { class: "btn danger wide-btn", type: "button", text: "Replace my data", onclick: () => {
           S = normalize(Object.assign({}, res.data, { setupDone: true, sample: false, lastBackup: E.iso(today()) }));
           applyTheme(); animateHome = true; close();
-          location.hash = "#home"; commit();
+          location.hash = "#home"; settleNow({ silent: true }); commit();
           Store.persist();
           toast("Backup restored");
         } }),
@@ -347,41 +380,58 @@
   /* ---------- Actions ---------- */
   const QUICK = [5, 10, 20, 50, 100];
   const CATS = ["Food", "Gas", "Coffee", "Fun", "Shopping", "Other"];
-  function logPurchaseSheet(prefill) {
+  const INCATS = ["Paycheck", "Side job", "Gift", "Refund", "Other"];
+  function logPurchaseSheet(prefill, startKind) {
     openSheet("Log a purchase", (body, close) => {
-      let cat = "";
+      let cat = "", kind = startKind === "income" ? "income" : "purchase";
+      const isIn = () => kind === "income";
       const amtInput = h("input", { id: "lp-amt", type: "text", inputmode: "decimal", autocomplete: "off", enterkeyhint: "done",
         "aria-label": "Amount in dollars", "aria-describedby": "lp-amt-err lp-impact", placeholder: "$0", value: prefill ? "$" + prefill : "" });
       const read = () => parseMoney(amtInput.value.trim());
       const quickBtns = QUICK.map((q) => h("button", { type: "button", "aria-pressed": "false", text: "$" + q, onclick: () => { amtInput.value = "$" + q; sync(); } }));
       const other = h("button", { type: "button", text: "Other", onclick: () => { amtInput.value = ""; amtInput.focus(); sync(); } });
       const step = (d) => { const v = read(); const n = Math.max(0, Math.round(((isFinite(v) ? v : 0) + d) * 100) / 100); amtInput.value = n ? "$" + n : ""; sync(); };
-      const catBtns = CATS.map((c) => h("button", { type: "button", "aria-pressed": "false", text: c, onclick: () => { cat = cat === c ? "" : c; catBtns.forEach((b) => b.setAttribute("aria-pressed", String(b.textContent === cat))); } }));
+      const catsBox = h("div", { class: "cats", role: "group", "aria-label": "Category" });
+      const hint = h("p", { class: "hint" });
+      function buildCats() {
+        cat = "";
+        hint.textContent = isIn() ? "Where it came from" : "What was it for";
+        const btns = (isIn() ? INCATS : CATS).map((c) => h("button", { type: "button", "aria-pressed": "false", text: c, onclick: () => { cat = cat === c ? "" : c; btns.forEach((b) => b.setAttribute("aria-pressed", String(b.textContent === cat))); } }));
+        catsBox.replaceChildren(...btns);
+      }
+      const segBtns = [["purchase", "Spent"], ["income", "Received"]].map(([k, l]) => h("button", { type: "button", "aria-pressed": String(kind === k), text: l, onclick: () => {
+        if (kind === k) return; kind = k;
+        segBtns.forEach((b, i) => b.setAttribute("aria-pressed", String(i === (isIn() ? 1 : 0))));
+        const t = document.getElementById("sheet-title"); if (t) t.textContent = isIn() ? "Log income" : "Log a purchase";
+        buildCats(); sync();
+      } }));
+      const seg = h("div", { class: "seg kind-seg", role: "group", "aria-label": "Money out or in" }, segBtns);
       const impact = h("p", { class: "impact", id: "lp-impact", "aria-live": "polite" });
       const go = h("button", { class: "btn primary wide-btn", type: "submit", text: "Log purchase" });
       function sync() {
         const v = read();
         quickBtns.forEach((b, i) => b.setAttribute("aria-pressed", String(v === QUICK[i])));
         if (v > 0 && v <= MAX_AMOUNT) {
-          const before = analysis().summary().safeToday;
-          const after = E.analyze(Object.assign({}, S, { balance: S.balance - v, log: [{ date: E.iso(today()), amt: v }].concat(S.log) }), { mode: "tusi", today: today() }).summary().safeToday;
-          impact.textContent = "Safe to spend today goes from " + m0(before) + " to " + m0(after) + ".";
-          go.textContent = "Log " + m2(v);
-        } else { impact.textContent = "Logging lowers your balance right away."; go.textContent = "Log purchase"; }
+          const before = analysis().summary().available, after = before + (isIn() ? v : -v);
+          impact.textContent = "Available now goes from " + m0(before) + " to " + m0(after) + ".";
+          go.textContent = (isIn() ? "Add " : "Log ") + m2(v);
+        } else {
+          impact.textContent = isIn() ? "Income raises your balance right away." : "Logging lowers your balance right away.";
+          go.textContent = isIn() ? "Add income" : "Log purchase";
+        }
       }
-      amtInput.addEventListener("input", sync);
+      amtInput.addEventListener("input", () => { if (/^\$\$/.test(amtInput.value)) amtInput.value = amtInput.value.replace(/^\$+/, "$"); sync(); });
       amtInput.addEventListener("focus", () => { if (!amtInput.value) amtInput.value = "$"; });
       amtInput.addEventListener("blur", () => { if (amtInput.value === "$") amtInput.value = ""; });
       const form = h("form", { class: "form", novalidate: true },
+        seg,
         h("div", { class: "stepper" },
           h("button", { type: "button", "aria-label": "One dollar less", onclick: () => step(-1) }, icon("i-minus")),
           amtInput,
           h("button", { type: "button", "aria-label": "One dollar more", onclick: () => step(1) }, icon("i-plus"))),
         h("p", { class: "err", id: "lp-amt-err", "aria-live": "polite" }),
         h("div", { class: "chipgrid", role: "group", "aria-label": "Quick amounts" }, quickBtns, other),
-        h("p", { class: "hint", text: "What was it for" }),
-        h("div", { class: "cats", role: "group", "aria-label": "Category" }, catBtns),
-        impact, go);
+        hint, catsBox, impact, go);
       form.addEventListener("submit", (e) => {
         e.preventDefault();
         const amt = read();
@@ -389,10 +439,7 @@
         if (!(amt > 0)) { errEl.textContent = "Enter an amount above zero, like 12 or 12.50"; amtInput.focus(); return; }
         if (amt > MAX_AMOUNT) { errEl.textContent = "That amount is too large"; return; }
         const before = analysis().summary();
-        const entry = { id: uid(), date: E.iso(today()), t: Date.now(), amt: amt, note: cat };
-        S.log.unshift(entry);
-        S.log = S.log.slice(0, 500);
-        S.balance = Math.round((S.balance - amt) * 100) / 100;
+        const [entry] = addEntries([Object.assign({ date: E.iso(today()), amt: amt, note: cat }, isIn() ? { kind: "income" } : {})]);
         commit();
         const after = analysis().summary();
         const rw = after.runway === Infinity ? "365+" : String(after.runway);
@@ -401,16 +448,18 @@
           h("div", { class: "grab", "aria-hidden": "true" }),
           h("div", { class: "done-state", role: "status" },
             h("div", { class: "orb", "aria-hidden": "true" }, icon("i-bigcheck")),
-            h("h2", { text: "Logged" }),
-            h("p", { text: m2(amt) + (cat ? " for " + cat : "") + ". Your numbers are up to date." }),
+            h("h2", { text: isIn() ? "Added" : "Logged" }),
+            h("p", { text: (isIn() ? "+" : "") + m2(amt) + (cat ? (isIn() ? " from " : " for ") + cat : "") + ". Your balance is now " + m2(S.balance) + "." }),
             h("div", { class: "facts" },
-              h("div", null, h("b", { text: m0(after.safeToday) }), h("span", { text: "Left to spend today, was " + m0(before.safeToday) })),
+              h("div", null, h("b", { text: m0(after.available) }), h("span", { text: "Available now, was " + m0(before.available) })),
               h("div", null, h("b", { text: rw + " days" }), h("span", { text: "Runway" })))),
           doneBtn,
-          h("button", { class: "btn quiet", type: "button", text: "Undo", onclick: () => { removeLog(entry.id, true); close(); toast("Purchase removed"); } }));
+          h("button", { class: "btn quiet", type: "button", text: "Undo", onclick: () => { removeLog(entry.id, true); close(); toast(isIn() ? "Income removed" : "Purchase removed"); } }));
         setTimeout(() => doneBtn.focus(), 30);
       });
       body.appendChild(form);
+      buildCats();
+      if (isIn()) { const t = body.querySelector("#sheet-title"); if (t) t.textContent = "Log income"; }
       sync();
     });
   }
@@ -418,9 +467,9 @@
     const i = S.log.findIndex((x) => x.id === id);
     if (i < 0) return;
     const [x] = S.log.splice(i, 1);
-    S.balance = Math.round((S.balance + x.amt) * 100) / 100;
+    S.balance = Math.round((S.balance - effectOf(x)) * 100) / 100;
     commit();
-    if (!silent) toast("Removed " + m2(x.amt) + ". Balance restored.", "Undo", () => { S.log.splice(i, 0, x); S.balance = Math.round((S.balance - x.amt) * 100) / 100; commit(); });
+    if (!silent) toast("Removed " + m2(x.amt) + ". Balance restored.", "Undo", () => { S.log.splice(i, 0, x); S.balance = Math.round((S.balance + effectOf(x)) * 100) / 100; commit(); });
   }
 
   function balanceSheet() {
@@ -441,7 +490,7 @@
   function numberSheet(key) {
     const meta = key === "daily"
       ? { title: "Daily spending", label: "Typical spending per day", hint: "Food, gas, coffee, fun. Everything that is not a bill." }
-      : { title: "Cushion", label: "Money to keep untouched", hint: "Safe to spend keeps this much aside. Zero is fine." };
+      : { title: "Cushion", label: "Money to keep untouched", hint: "Available now keeps this much aside. Zero is fine." };
     openSheet(meta.title, (body, close) => {
       const form = h("form", { class: "form", novalidate: true },
         moneyField("num", meta.label, S[key], { big: true, hint: meta.hint }),
@@ -482,7 +531,14 @@
         const freq = document.getElementById("it-freq").value;
         const data = { name: name || (kind === "income" ? "Income" : "Bill"), amount: amt, freq: E.FREQS.includes(freq) ? freq : "monthly", next: next };
         if (existing) Object.assign(existing, data); else list.push(Object.assign({ id: uid() }, data));
-        close(); commit(); toast(existing ? "Saved" : "Added " + data.name);
+        close();
+        const dueToday = E.occurrences(data, today(), 0).length > 0 && S.settledThrough >= E.iso(today());
+        if (dueToday && !(existing && existing.appliedOn === E.iso(today()))) {
+          const [x] = addEntries([{ date: E.iso(today()), amt: data.amount, kind: kind === "income" ? "pay" : "bill", note: data.name || noun }]);
+          (existing || list[list.length - 1]).appliedOn = E.iso(today());
+          commit();
+          toast((kind === "income" ? "Due today, so " + m2(data.amount) + " was added to your balance" : "Due today, so " + m2(data.amount) + " was taken from your balance"), "Undo", () => removeLog(x.id, true));
+        } else { commit(); toast(existing ? "Saved" : "Added " + data.name); }
       });
       body.appendChild(form);
       if (existing) {
@@ -522,7 +578,7 @@
           h("span", { class: "pill " + cls, text: verdict }),
           r.daysOfSpending !== null ? h("p", null, "That is ", h("b", { text: (r.daysOfSpending < 10 ? r.daysOfSpending.toFixed(1) : Math.round(r.daysOfSpending)) + " days" }), " of your normal spending.") : null,
           h("p", null, "Runway goes from ", h("b", { text: rw(r.runwayBefore) }), " to ", h("b", { text: rw(r.runwayAfter) }), " days" + (lost > 0 ? ", " + plural(lost, "day") + " less." : ".")),
-          h("p", { text: "Safe to spend today goes from " + m0(r.safeBefore) + " to " + m0(r.safeAfter) + "." }));
+          h("p", { text: "Available now goes from " + m0(analysis().summary().available) + " to " + m0(analysis().summary().available - p) + ". Today's spending guide goes from " + m0(r.safeBefore) + " to " + m0(r.safeAfter) + "." }));
       };
       input.addEventListener("input", update);
       logBtn.addEventListener("click", () => { const p = parseMoney(input.value.trim()); close(); if (p > 0) setTimeout(() => logPurchaseSheet(p), 60); });
@@ -534,7 +590,7 @@
   /* ---------- Log stats ---------- */
   function weekStats() {
     const cut = E.iso(dayOff(-6)), t = E.iso(today());
-    const recent = S.log.filter((x) => x.date >= cut && x.date <= t);
+    const recent = S.log.filter((x) => isPurchase(x) && x.date >= cut && x.date <= t);
     const days = new Set(recent.map((x) => x.date));
     const total = recent.reduce((a, x) => a + x.amt, 0);
     return { total: total, avg: total / 7, days: days.size, count: recent.length };
@@ -651,20 +707,23 @@
       h("div", { class: "who" }, mark(), h("div", null, h("p", { class: "k", text: hello }), h("h1", { id: "home-title", text: fmtDate(today(), { weekday: "long", month: "short", day: "numeric" }) }))),
       h("div", { class: "btn-row" }, S.sample ? h("span", { class: "chip", text: "Sample" }) : null, bell));
 
-    /* Hero: safe to spend */
-    const winEnd = sm.safeWindow;
-    const horizon = A.paydays.length >= 2 && winEnd === A.paydays[1] ? "Each day until payday on " + monthDay(winEnd) : "Each day for the next " + winEnd + " days";
+    /* Hero: money available now = balance, minus bills before payday, minus the cushion */
+    const av = sm.available, avNeg = av < 0, avAbs = Math.abs(av);
+    const untilText = sm.nextPayday !== null ? "before payday on " + monthDay(sm.availableUntil) : "in the next 30 days";
     let sub;
-    if (sm.short) sub = "You are " + m0(sm.short.amount) + " short before your next payday. Hold off on extras.";
-    else if (sm.safeToday <= 0 && sm.spentToday > 0) sub = "You have spent " + m0(sm.spentToday) + " today, which uses up today's safe amount.";
-    else sub = horizon + (S.buffer > 0 ? ", with your " + m0(S.buffer) + " cushion kept aside." : ".") + (sm.spentToday > 0 ? " Already counts the " + m0(sm.spentToday) + " you logged today." : "");
-    const whole = Math.floor(sm.safeToday), cents = Math.round((sm.safeToday - whole) * 100);
+    if (sm.availableBills > 0) sub = "Your " + m2(S.balance) + " balance, minus " + m0(sm.availableBills) + " in bills " + untilText + (S.buffer > 0 ? " and your " + m0(S.buffer) + " cushion." : ".");
+    else sub = "Your " + m2(S.balance) + " balance, with no bills due " + untilText + (S.buffer > 0 ? " and your " + m0(S.buffer) + " cushion kept aside." : ".");
+    if (avNeg) sub += " Bills " + untilText + " are more than you have. Hold off on extras.";
+    const pace = sm.short ? "You are " + m0(sm.short.amount) + " short before your next payday at your usual spending."
+      : "To stay on track, spend about " + m0(sm.safeToday) + " today" + (sm.spentToday > 0 ? ", after the " + m0(sm.spentToday) + " you logged" : "") + ".";
+    const whole = Math.floor(avAbs), cents = Math.round((avAbs - whole) * 100);
     const hero = h("section", { class: "hero", "aria-labelledby": "sf-l" },
-      h("p", { class: "lbl", id: "sf-l", text: "Safe to spend today" }),
-      h("p", { class: "big" }, fm0.format(whole), h("span", { class: "cents", text: "." + String(cents).padStart(2, "0") })),
+      h("p", { class: "lbl", id: "sf-l", text: "Available now" }),
+      h("p", { class: "big" + (avNeg ? " neg" : "") }, (avNeg ? MINUS : "") + fm0.format(whole), h("span", { class: "cents", text: "." + String(cents).padStart(2, "0") })),
       h("p", { class: "sub", text: sub }),
+      h("p", { class: "sub pace", text: pace }),
       h("div", { class: "pills" },
-        h("button", { class: "pillbtn on", type: "button", text: "Log", onclick: () => logPurchaseSheet() }),
+        h("button", { class: "pillbtn on", type: "button", text: "Log", "aria-label": "Log money in or out", onclick: () => logPurchaseSheet() }),
         h("button", { class: "pillbtn", type: "button", text: "Afford?", "aria-label": "Can I afford this?", onclick: affordSheet }),
         h("button", { class: "pillbtn", type: "button", text: "Balance", "aria-label": "Update balance", onclick: balanceSheet })));
 
@@ -806,7 +865,7 @@
     groups.sort((a, b) => (a.date < b.date ? 1 : -1));
     const label = (d) => (d === t ? "Today" : d === yest ? "Yesterday" : fmtDate(E.parseDate(d), { weekday: "long", month: "short", day: "numeric" }));
     $("#view-log").replaceChildren(
-      pageHead("log-title", "Log", "Purchases you logged. Each one lowers your balance."),
+      pageHead("log-title", "Log", "Money in and out. Your balance updates with every entry."),
       h("div", { class: "grid2" },
         h("section", { class: "card", "aria-labelledby": "wk-l" },
           h("div", { class: "sec-h" }, h("h2", { id: "wk-l", text: "Last 7 days" })),
@@ -815,17 +874,19 @@
           w.days >= 3 ? h("div", { class: "btn-row" }, h("button", { class: "btn small", type: "button", text: "Use " + m0(w.avg) + " a day as my plan", onclick: () => { S.daily = Math.round(w.avg); commit(); toast("Daily spending set to " + m0(S.daily)); } })) : h("p", { class: "hint muted", text: "Log on 3 or more days and TUSI can suggest your real daily average." })),
         h("section", { class: "card iconrow" },
           h("span", { class: "circle teal" }, icon("i-plus")),
-          h("div", null, h("h2", { text: "Log as you go" }), h("p", { text: "Tap the plus button after each purchase. It takes a few seconds and keeps safe to spend honest." }),
-            h("div", { class: "btn-row" }, h("button", { class: "btn primary small", type: "button", text: "Log a purchase", onclick: () => logPurchaseSheet() })))),
+          h("div", null, h("h2", { text: "Log as you go" }), h("p", { text: "Tap the plus button after each purchase, or when extra money comes in. Paydays and bills from Plan are added on their day for you." }),
+            h("div", { class: "btn-row" }, h("button", { class: "btn primary small", type: "button", text: "Log a purchase", onclick: () => logPurchaseSheet() }),
+              h("button", { class: "btn small", type: "button", text: "Log income", onclick: () => logPurchaseSheet(null, "income") })))),
         h("section", { class: "card span", "aria-labelledby": "hs-l" },
           h("div", { class: "sec-h" }, h("h2", { id: "hs-l", text: "History" })),
           groups.length ? groups.slice(0, 60).map((g) => h("div", null,
-            h("p", { class: "group-label", text: label(g.date) + ", " + m2(g.items.reduce((a, x) => a + x.amt, 0)) }),
-            h("ul", { class: "list" }, g.items.map((x) => h("li", null, h("div", { class: "rowline" },
-              h("span", { class: "k", text: x.note || "Purchase" }),
-              h("span", { class: "btn-row" }, h("span", { class: "v", text: MINUS + m2(x.amt) }),
-                h("button", { class: "btn quiet small", type: "button", "aria-label": "Remove " + (x.note || "purchase") + " " + m2(x.amt), text: "Remove", onclick: () => removeLog(x.id) }))))))))
-            : h("p", { class: "empty", text: "No purchases yet. Your first one will show up here." }))));
+            h("p", { class: "group-label", text: label(g.date) + (g.items.some(isPurchase) ? ", spent " + m2(g.items.filter(isPurchase).reduce((a, x) => a + x.amt, 0)) : "") }),
+            h("ul", { class: "list" }, g.items.map((x) => { const up = LOG_IN.includes(x.kind), nm = x.note || (x.kind ? KIND_LABEL[x.kind] : "Purchase");
+              return h("li", null, h("div", { class: "rowline" },
+              h("span", { class: "k" }, nm, x.kind && x.note ? h("small", { text: KIND_LABEL[x.kind] }) : null),
+              h("span", { class: "btn-row" }, h("span", { class: "v" + (up ? " in" : ""), text: (up ? "+" : MINUS) + m2(x.amt) }),
+                h("button", { class: "btn quiet small", type: "button", "aria-label": "Remove " + nm + " " + m2(x.amt) + " and undo its change to your balance", text: "Remove", onclick: () => removeLog(x.id) })))); }))))
+            : h("p", { class: "empty", text: "Nothing logged yet. Purchases, income, paydays and bills will show up here." }))));
   }
 
   function renderMore() {
@@ -860,7 +921,7 @@
           h("div", { class: "dedication" },
             h("p", { text: "For Deborah, who we call Tusi. Every plan in here is made with the people we love in mind, so the money lasts for the days that matter." }),
             h("span", { class: "sig", text: "With love, Natu" })),
-          h("p", { class: "lead", text: "TUSI shows how many days your money lasts and what is safe to spend today. It has no accounts, no bank links and no tracking. Your numbers stay on this device." }),
+          h("p", { class: "lead", text: "TUSI shows how much money you can use right now and how many days it lasts. It has no accounts, no bank links and no tracking. Your numbers stay on this device." }),
           h("p", { class: "lead", text: "Forecasts are estimates, not financial advice. Version " + APP_VERSION + "." }))));
   }
 
@@ -926,8 +987,10 @@
     if (pay) S.incomes.push(pay);
     setup = { step: 1, balance: "", daily: "", payAmt: "", payFreq: "biweekly", payNext: "" };
     Store.persist();
-    location.hash = "#home"; commit();
-    toast("You are set. Add your bills in Plan.", "Open Plan", () => { location.hash = "#plan"; });
+    location.hash = "#home";
+    const made = settleNow();
+    commit();
+    if (!made.length) toast("You are set. Add your bills in Plan.", "Open Plan", () => { location.hash = "#plan"; });
   }
 
   /* ---------- Router ---------- */
@@ -963,11 +1026,12 @@
     let rz = null, lastW = window.innerWidth;
     window.addEventListener("resize", () => { clearTimeout(rz); rz = setTimeout(() => { if (Math.abs(window.innerWidth - lastW) > 30 && current === "home" && !sheet().open) { lastW = window.innerWidth; renderHome(); } }, 200); });
     let lastDay = E.iso(today());
-    document.addEventListener("visibilitychange", () => { if (!document.hidden && E.iso(today()) !== lastDay) { lastDay = E.iso(today()); render(); } });
+    document.addEventListener("visibilitychange", () => { if (!document.hidden && E.iso(today()) !== lastDay) { lastDay = E.iso(today()); if (S.setupDone) { settleNow(); commit(); } else render(); } });
     let saved = null;
     try { saved = await Store.init(); } catch (e) { saved = null; }
     S = normalize(saved);
     applyTheme();
+    if (S.setupDone && settleNow().length) commit({ quiet: true });
     if (Store.backend() === "memory") {
       const b = $("#storage-banner"); b.textContent = "Saving is off in this browser mode, so your numbers will be gone when you close this tab. Open TUSI in a normal window to keep them."; b.hidden = false;
     }
